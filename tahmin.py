@@ -13,7 +13,7 @@ import numpy as np
 import TSLA_DUYGU  # TSLA_DUYGU.py dosyasını import et
 
 # Veriyi yükle
-data = pd.read_csv('c:\\Users\\kizilyazitug\\Desktop\\train\\TSLA_2010-06-29_2025-02-13.csv')
+data = pd.read_csv('Desktop\\train\\TSLA_2010-06-29_2025-02-13.csv')
 
 # Duygu puanını yükle
 total_sentiment_score = TSLA_DUYGU.get_total_sentiment_score()
