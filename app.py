@@ -4,12 +4,14 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
-from datetime import datetime
+from datetime import datetime, timedelta
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from filterpy.kalman import KalmanFilter
 from sklearn.preprocessing import MinMaxScaler
+from news_analyzer import NewsAnalyzer
+import json
 
 app = Flask(__name__)
 
@@ -77,25 +79,31 @@ def create_lstm_model(seq_length, n_features):
 
 def get_stock_data(symbol):
     stock = yf.Ticker(symbol)
-    # Son 2 yıllık veriyi çek
-    hist = stock.history(period="2y")
+    # Tüm geçmiş veriyi çek
+    hist = stock.history(period="max")
     return hist
 
-def prepare_data(stock_data):
+def prepare_data(hist, symbol):
     # Kalman filtresi uygula
-    prices = stock_data['Close'].values
-    filtered_prices = apply_kalman_filter(prices)
+    filtered_close = apply_kalman_filter(hist['Close'].values)
+    hist['Filtered_Close'] = filtered_close
+
+    # Teknik göstergeler
+    hist['MA5'] = hist['Close'].rolling(window=5).mean()
+    hist['MA20'] = hist['Close'].rolling(window=20).mean()
     
-    # Özellik mühendisliği
-    stock_data['Returns'] = stock_data['Close'].pct_change()
-    stock_data['MA5'] = stock_data['Close'].rolling(window=5).mean()
-    stock_data['MA20'] = stock_data['Close'].rolling(window=20).mean()
-    stock_data['Filtered_Close'] = filtered_prices
+    # Haber analizi
+    news_analyzer = NewsAnalyzer()
+    news_features = news_analyzer.get_news_features(symbol)
+    
+    # Haber özelliklerini ekle (etkisini daha da azalt)
+    hist['News_Sentiment'] = news_features['news_sentiment'] * 0.15  # %15 etki
+    hist['Has_Recent_News'] = news_features['has_recent_news'] * 0.1  # %10 etki
     
     # NaN değerleri temizle
-    stock_data = stock_data.dropna()
+    hist = hist.dropna()
     
-    return stock_data
+    return hist
 
 @app.route('/')
 def home():
@@ -103,25 +111,25 @@ def home():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    symbol = request.form['symbol']
-    
     try:
-        # Hisse senedi verilerini al
-        stock_data = get_stock_data(symbol)
+        symbol = request.form['symbol']
+        hist = get_stock_data(symbol)
         
-        # Verileri hazırla
-        processed_data = prepare_data(stock_data)
+        if hist.empty:
+            return jsonify({'success': False, 'error': 'Veri bulunamadı'})
         
-        # Random Forest için veri hazırlama
-        features = ['Open', 'High', 'Low', 'Volume', 'Returns', 'MA5', 'MA20']
-        X_rf = processed_data[features]
-        y_rf = processed_data['Close'].shift(-1).dropna()
-        X_rf = X_rf[:-1]
+        # Veriyi hazırla
+        processed_data = prepare_data(hist, symbol)
+        
+        # Random Forest için özellikler
+        features_rf = ['Open', 'High', 'Low', 'Volume', 'MA5', 'MA20', 'News_Sentiment', 'Has_Recent_News']
+        X_rf = processed_data[features_rf].values
+        y_rf = processed_data['Close'].values
         
         # LSTM için veri hazırlama
-        seq_length = 30  # Son 30 günlük veriyi kullan
-        n_features = 5
-        features_lstm = ['Open', 'High', 'Low', 'Volume', 'Filtered_Close']
+        seq_length = 30
+        n_features = 7
+        features_lstm = ['Open', 'High', 'Low', 'Volume', 'Filtered_Close', 'News_Sentiment', 'Has_Recent_News']
         data_lstm = processed_data[features_lstm].values
         
         # Veriyi normalize et
@@ -133,7 +141,7 @@ def analyze():
         
         # Random Forest modeli
         X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(X_rf, y_rf, test_size=0.2, random_state=42)
-        rf_model = RandomForestRegressor(n_estimators=200, random_state=42)  # Daha az ağaç
+        rf_model = RandomForestRegressor(n_estimators=400, random_state=42)  # Ağaç sayısını artırdık
         rf_model.fit(X_train_rf, y_train_rf)
         
         # LSTM modeli
@@ -143,65 +151,58 @@ def analyze():
         # Early stopping ve learning rate scheduler ekle
         early_stopping = tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=10,  # Daha kısa bekleme süresi
+            patience=20,  # Daha uzun bekleme süresi
             restore_best_weights=True
         )
         
         reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.5,
-            patience=5,
+            patience=10,  # Daha uzun bekleme süresi
             min_lr=0.00001
         )
         
-        # Model eğitimi
+        # Model eğitimi (epoch sayısını 2 katına çıkardık)
         history = lstm_model.fit(
             X_train_lstm, y_train_lstm,
-            epochs=100,  # Daha az epoch
-            batch_size=64,  # Daha küçük batch size
+            epochs=200,  # 2 katına çıkardık
+            batch_size=64,
             validation_split=0.2,
             callbacks=[early_stopping, reduce_lr],
             verbose=0
         )
         
-        # Son gün için tahminler
-        last_data_rf = X_rf.iloc[-1:]
-        rf_prediction = rf_model.predict(last_data_rf)[0]
+        # Son veriyi al ve tahmin yap
+        last_data_rf = X_rf[-1:]
+        last_data_lstm = X_lstm[-1:]
         
-        last_sequence = data_scaled[-seq_length:]
-        last_sequence = last_sequence.reshape((1, seq_length, n_features))
-        lstm_prediction = lstm_model.predict(last_sequence)[0][0]
-        lstm_prediction = scaler.inverse_transform([[0, 0, 0, 0, lstm_prediction]])[0][4]
+        rf_pred = rf_model.predict(last_data_rf)[0]
+        lstm_pred = lstm_model.predict(last_data_lstm)[0][0]
         
-        # Tahminleri birleştir (ensemble)
-        ensemble_prediction = (rf_prediction + lstm_prediction) / 2
+        # Tahminleri birleştir (Random Forest'a daha fazla ağırlık ver)
+        prediction = (rf_pred * 0.8 + lstm_pred * 0.2)  # Random Forest'a %80 ağırlık
         
-        # Grafik için tarih ve fiyat verilerini hazırla
-        dates = stock_data.index.strftime('%Y-%m-%d').tolist()
-        prices = stock_data['Close'].tolist()
-        filtered_prices = processed_data['Filtered_Close'].tolist()
-        
-        # Son tarihi al ve bir sonraki iş gününü hesapla
-        last_date = stock_data.index[-1]
-        next_date = last_date + pd.Timedelta(days=1)
+        # Tahmin tarihini hesapla
+        last_date = processed_data.index[-1]
+        next_date = last_date + timedelta(days=1)
         while next_date.weekday() >= 5:  # Hafta sonu kontrolü
-            next_date += pd.Timedelta(days=1)
+            next_date += timedelta(days=1)
         
-        return jsonify({
+        # Sonuçları hazırla
+        result = {
             'success': True,
-            'current_price': float(stock_data['Close'].iloc[-1]),
-            'prediction': float(ensemble_prediction),
+            'current_price': float(hist['Close'].iloc[-1]),
+            'prediction': float(prediction),
             'prediction_date': next_date.strftime('%Y-%m-%d'),
-            'dates': dates,
-            'prices': prices,
-            'filtered_prices': filtered_prices
-        })
+            'dates': processed_data.index.strftime('%Y-%m-%d').tolist(),
+            'prices': processed_data['Close'].tolist(),
+            'filtered_prices': processed_data['Filtered_Close'].tolist()
+        }
+        
+        return jsonify(result)
         
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        })
+        return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
     app.run(debug=True) 
