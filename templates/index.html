@@ -133,6 +133,42 @@
             color: #2193b0;
             margin-right: 5px;
         }
+
+        .news-impact-gauge {
+            width: 100%;
+            height: 60px;
+            background: #f8f9fa;
+            border-radius: 30px;
+            margin: 10px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .news-impact-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #ffc107, #dc3545);
+            width: 0%;
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .news-impact-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-weight: bold;
+            z-index: 1;
+            text-shadow: 0 0 2px white;
+        }
+
+        .news-impact-label {
+            text-align: center;
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
 </head>
 
@@ -141,10 +177,15 @@
         <h4><i class="fas fa-info-circle"></i> Sistem Bilgisi</h4>
         <ul>
             <li>Random Forest ve LSTM modelleri kullanılır</li>
-            <li>Tum zamanlar verileri analiz edilir</li>
+            <li>Son 2 yıllık veri analiz edilir</li>
             <li>Bir sonraki iş günü için tahmin yapılır</li>
             <li>Sonuçlar %100 garanti değildir</li>
         </ul>
+        <div class="news-impact-label">Haber Etkisi</div>
+        <div class="news-impact-gauge">
+            <div class="news-impact-fill" id="newsImpactFill"></div>
+            <div class="news-impact-text" id="newsImpactText">%0</div>
+        </div>
     </div>
 
     <div class="container">
@@ -336,6 +377,25 @@
             });
         }
 
+        function updateNewsImpact(sentiment) {
+            // Sentiment değerini 0-100 arasına dönüştür
+            const impact = Math.abs(sentiment * 100);
+            const fill = document.getElementById('newsImpactFill');
+            const text = document.getElementById('newsImpactText');
+
+            fill.style.width = impact + '%';
+            text.textContent = '%' + impact.toFixed(1);
+
+            // Renk değişimi
+            if (sentiment > 0) {
+                fill.style.background = 'linear-gradient(90deg, #28a745, #ffc107)';
+            } else if (sentiment < 0) {
+                fill.style.background = 'linear-gradient(90deg, #ffc107, #dc3545)';
+            } else {
+                fill.style.background = '#ffc107';
+            }
+        }
+
         $(document).ready(function () {
             $('#stockForm').on('submit', function (e) {
                 e.preventDefault();
@@ -352,6 +412,9 @@
                             $('#currentPrice').text('$' + response.current_price.toFixed(2));
                             $('#predictedPrice').text('$' + response.prediction.toFixed(2));
                             $('#predictionDate').text('Tahmin Tarihi: ' + response.prediction_date);
+
+                            // Haber etkisini güncelle
+                            updateNewsImpact(response.news_sentiment);
 
                             // Fiyat değişimi hesaplama ve gösterimi
                             const priceChange = ((response.prediction - response.current_price) / response.current_price * 100).toFixed(2);

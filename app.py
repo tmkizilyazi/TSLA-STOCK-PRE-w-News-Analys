@@ -196,7 +196,8 @@ def analyze():
             'prediction_date': next_date.strftime('%Y-%m-%d'),
             'dates': processed_data.index.strftime('%Y-%m-%d').tolist(),
             'prices': processed_data['Close'].tolist(),
-            'filtered_prices': processed_data['Filtered_Close'].tolist()
+            'filtered_prices': processed_data['Filtered_Close'].tolist(),
+            'news_sentiment': float(news_features['news_sentiment'])  # Haber etkisini ekle
         }
         
         return jsonify(result)
