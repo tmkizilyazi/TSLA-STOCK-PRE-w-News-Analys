@@ -163,6 +163,7 @@
                                     <div class="col-6">
                                         <h5>Tahmin Edilen Fiyat</h5>
                                         <p id="predictedPrice" class="h3 text-success"></p>
+                                        <p id="predictionDate" class="text-muted small"></p>
                                     </div>
                                 </div>
                                 <div class="row mt-3">
@@ -197,7 +198,7 @@
         let priceChart = null;
         let predictionChart = null;
 
-        function createPriceChart(dates, prices) {
+        function createPriceChart(dates, prices, filtered_prices) {
             if (priceChart) {
                 priceChart.destroy();
             }
@@ -208,12 +209,21 @@
                 data: {
                     labels: dates,
                     datasets: [{
-                        label: 'Hisse Senedi Fiyatı',
+                        label: 'Gerçek Fiyat',
                         data: prices,
                         borderColor: '#2193b0',
                         backgroundColor: 'rgba(33, 147, 176, 0.1)',
                         fill: true,
                         tension: 0.4
+                    },
+                    {
+                        label: 'Filtrelenmiş Fiyat',
+                        data: filtered_prices,
+                        borderColor: '#28a745',
+                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderDash: [5, 5]
                     }]
                 },
                 options: {
@@ -222,11 +232,23 @@
                     plugins: {
                         legend: {
                             position: 'top',
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
                         }
                     },
                     scales: {
                         y: {
-                            beginAtZero: false
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
                         }
                     }
                 }
@@ -282,6 +304,7 @@
                         if (response.success) {
                             $('#currentPrice').text('$' + response.current_price.toFixed(2));
                             $('#predictedPrice').text('$' + response.prediction.toFixed(2));
+                            $('#predictionDate').text('Tahmin Tarihi: ' + response.prediction_date);
 
                             // Fiyat değişimi hesaplama ve gösterimi
                             const priceChange = ((response.prediction - response.current_price) / response.current_price * 100).toFixed(2);
@@ -290,7 +313,7 @@
                             priceChangeElement.removeClass('price-up price-down').addClass(priceChange >= 0 ? 'price-up' : 'price-down');
 
                             // Grafikleri oluştur
-                            createPriceChart(response.dates, response.prices);
+                            createPriceChart(response.dates, response.prices, response.filtered_prices);
                             createPredictionChart(response.current_price, response.prediction);
 
                             $('.result-card').show();
