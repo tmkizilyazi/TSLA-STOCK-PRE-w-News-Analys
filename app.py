@@ -118,6 +118,10 @@ def analyze():
         if hist.empty:
             return jsonify({'success': False, 'error': 'Veri bulunamadı'})
         
+        # Haber analizini yap
+        news_analyzer = NewsAnalyzer()
+        news_features = news_analyzer.get_news_features(symbol)
+        
         # Veriyi hazırla
         processed_data = prepare_data(hist, symbol)
         
@@ -141,7 +145,7 @@ def analyze():
         
         # Random Forest modeli
         X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(X_rf, y_rf, test_size=0.2, random_state=42)
-        rf_model = RandomForestRegressor(n_estimators=400, random_state=42)  # Ağaç sayısını artırdık
+        rf_model = RandomForestRegressor(n_estimators=400, random_state=42)
         rf_model.fit(X_train_rf, y_train_rf)
         
         # LSTM modeli
@@ -151,21 +155,21 @@ def analyze():
         # Early stopping ve learning rate scheduler ekle
         early_stopping = tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=20,  # Daha uzun bekleme süresi
+            patience=20,
             restore_best_weights=True
         )
         
         reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.5,
-            patience=10,  # Daha uzun bekleme süresi
+            patience=10,
             min_lr=0.00001
         )
         
-        # Model eğitimi (epoch sayısını 2 katına çıkardık)
+        # Model eğitimi
         history = lstm_model.fit(
             X_train_lstm, y_train_lstm,
-            epochs=200,  # 2 katına çıkardık
+            epochs=200,
             batch_size=64,
             validation_split=0.2,
             callbacks=[early_stopping, reduce_lr],
@@ -179,8 +183,8 @@ def analyze():
         rf_pred = rf_model.predict(last_data_rf)[0]
         lstm_pred = lstm_model.predict(last_data_lstm)[0][0]
         
-        # Tahminleri birleştir (Random Forest'a daha fazla ağırlık ver)
-        prediction = (rf_pred * 0.8 + lstm_pred * 0.2)  # Random Forest'a %80 ağırlık
+        # Tahminleri birleştir
+        prediction = (rf_pred * 0.8 + lstm_pred * 0.2)
         
         # Tahmin tarihini hesapla
         last_date = processed_data.index[-1]
