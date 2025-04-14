@@ -71,7 +71,7 @@
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }
 
         .form-control {
@@ -92,10 +92,12 @@
 
         .price-up {
             color: #28a745;
+            font-weight: bold;
         }
 
         .price-down {
             color: #dc3545;
+            font-weight: bold;
         }
 
         .info-badge {
@@ -133,10 +135,61 @@
             color: #2193b0;
             margin-right: 5px;
         }
+
+        /* Haber Etkisi Kronometresi Stilleri */
+        .news-impact-timer {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            width: 250px;
+            border-left: 4px solid #2193b0;
+        }
+
+        .news-impact-timer h5 {
+            margin: 0 0 10px 0;
+            color: #2193b0;
+            font-size: 16px;
+        }
+
+        .news-impact-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .news-impact-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .news-impact-positive {
+            color: #28a745;
+        }
+
+        .news-impact-negative {
+            color: #dc3545;
+        }
+
+        .news-impact-neutral {
+            color: #6c757d;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Haber Etkisi Kronometresi -->
+    <div class="news-impact-timer">
+        <h5><i class="fas fa-newspaper me-2"></i>Haber Etkisi</h5>
+        <div class="news-impact-value" id="newsImpactValue">0.00</div>
+        <div class="news-impact-label" id="newsImpactLabel">Fiyat üzerindeki etki</div>
+    </div>
+
     <div class="info-badge">
         <h4><i class="fas fa-info-circle"></i> Sistem Bilgisi</h4>
         <ul>
@@ -244,6 +297,7 @@
     <script>
         let priceChart = null;
         let predictionChart = null;
+        let newsImpactInterval = null;
 
         function createPriceChart(dates, prices, filtered_prices) {
             if (priceChart) {
@@ -315,7 +369,7 @@
                     datasets: [{
                         data: [currentPrice, predictedPrice],
                         backgroundColor: ['#2193b0', '#28a745'],
-                        borderColor: ['#2193b0', '#28a745'],
+                        borderColor: ['#1c7a94', '#218838'],
                         borderWidth: 1
                     }]
                 },
@@ -325,15 +379,45 @@
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return '$' + context.raw.toFixed(2);
+                                }
+                            }
                         }
                     },
                     scales: {
                         y: {
-                            beginAtZero: false
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
                         }
                     }
                 }
             });
+        }
+
+        // Haber etkisi kronometresi
+        function updateNewsImpact(newsImpact) {
+            const impactValue = parseFloat(newsImpact);
+            const impactElement = document.getElementById('newsImpactValue');
+            const impactLabel = document.getElementById('newsImpactLabel');
+
+            impactElement.textContent = impactValue.toFixed(2);
+
+            if (impactValue > 0) {
+                impactElement.className = 'news-impact-value news-impact-positive';
+                impactLabel.textContent = 'Pozitif haber etkisi';
+            } else if (impactValue < 0) {
+                impactElement.className = 'news-impact-value news-impact-negative';
+                impactLabel.textContent = 'Negatif haber etkisi';
+            } else {
+                impactElement.className = 'news-impact-value news-impact-neutral';
+                impactLabel.textContent = 'Nötr haber etkisi';
+            }
         }
 
         $(document).ready(function () {
@@ -362,6 +446,15 @@
                             // Grafikleri oluştur
                             createPriceChart(response.dates, response.prices, response.filtered_prices);
                             createPredictionChart(response.current_price, response.prediction);
+
+                            // Haber etkisini güncelle
+                            updateNewsImpact(response.news_impact);
+
+                            // Haber etkisi kronometresi - sürekli güncellemeyi kaldırdık
+                            if (newsImpactInterval) {
+                                clearInterval(newsImpactInterval);
+                                newsImpactInterval = null;
+                            }
 
                             $('.result-card').show();
                         } else {

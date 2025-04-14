@@ -1,9 +1,30 @@
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # TensorFlow log seviyesini hata mesajlarına ayarla
 
+# GPU kullanımını etkinleştir
+import tensorflow as tf
+physical_devices = tf.config.list_physical_devices('GPU')
+if physical_devices:
+    try:
+        for device in physical_devices:
+            tf.config.experimental.set_memory_growth(device, True)
+        print("GPU kullanımı etkinleştirildi")
+    except RuntimeError as e:
+        print(f"GPU yapılandırma hatası: {e}")
+else:
+    print("GPU bulunamadı, CPU kullanılacak")
+
+# CUDA ve cuDNN sürümlerini kontrol et
+print(f"TensorFlow sürümü: {tf.__version__}")
+print(f"CUDA kullanılabilir: {tf.test.is_built_with_cuda()}")
+print(f"GPU cihazları: {tf.config.list_physical_devices('GPU')}")
+
+# CPU optimizasyonları
+tf.config.threading.set_inter_op_parallelism_threads(4)
+tf.config.threading.set_intra_op_parallelism_threads(4)
+
 import pandas as pd
 import matplotlib.pyplot as plt
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM
 from sklearn.preprocessing import MinMaxScaler
@@ -77,14 +98,22 @@ rf_model.fit(X_train, y_train)
 X_train_lstm = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
 X_test_lstm = X_test.reshape(X_test.shape[0], X_test.shape[1], 1)
 
+# CPU için optimize edilmiş LSTM modeli
 lstm_model = Sequential()
-lstm_model.add(LSTM(50, return_sequences=True, input_shape=(time_step + 1, 1)))
-lstm_model.add(LSTM(50, return_sequences=False))
-lstm_model.add(Dense(25))
+lstm_model.add(LSTM(32, return_sequences=True, input_shape=(time_step + 1, 1)))  # Nöron sayısını azalttık
+lstm_model.add(LSTM(16, return_sequences=False))  # Nöron sayısını azalttık
+lstm_model.add(Dense(8))  # Nöron sayısını azalttık
 lstm_model.add(Dense(1))
 
-lstm_model.compile(optimizer='adam', loss='mean_squared_error')
-lstm_model.fit(X_train_lstm, y_train, batch_size=1, epochs=20)
+# CPU için optimize edilmiş derleyici ayarları
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+lstm_model.compile(optimizer=optimizer, loss='mean_squared_error')
+
+# CPU için optimize edilmiş eğitim parametreleri
+lstm_model.fit(X_train_lstm, y_train, 
+               batch_size=256,  # Batch size'ı daha da artırdık
+               epochs=10,  # Epoch sayısını azalttık
+               validation_split=0.2)  # workers parametresini kaldırdık
 
 # Model tahminleri
 xgb_train_predict = xgb_model.predict(X_train)

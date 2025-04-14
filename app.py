@@ -12,6 +12,11 @@ from filterpy.kalman import KalmanFilter
 from sklearn.preprocessing import MinMaxScaler
 from news_analyzer import NewsAnalyzer
 import json
+import random  # Rastgele değerler için
+
+# CPU optimizasyonları
+tf.config.threading.set_inter_op_parallelism_threads(4)
+tf.config.threading.set_intra_op_parallelism_threads(4)
 
 app = Flask(__name__)
 
@@ -61,20 +66,16 @@ def create_sequences(data, seq_length):
 
 def create_lstm_model(seq_length, n_features):
     model = Sequential([
-        LSTM(256, return_sequences=True, input_shape=(seq_length, n_features)),
-        Dropout(0.3),
-        LSTM(128, return_sequences=True),
-        Dropout(0.3),
-        LSTM(64, return_sequences=False),
-        Dropout(0.3),
-        Dense(32, activation='relu'),
-        Dense(16, activation='relu'),
+        LSTM(64, return_sequences=True, input_shape=(seq_length, n_features)),  # Nöron sayısını azalttık
+        Dropout(0.2),
+        LSTM(32, return_sequences=False),  # Nöron sayısını azalttık
+        Dropout(0.2),
+        Dense(16),  # Nöron sayısını azalttık
         Dense(1)
     ])
     
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                 loss='mse',
-                 metrics=['mae', 'mse'])
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    model.compile(optimizer=optimizer, loss='mse')
     return model
 
 def get_stock_data(symbol):
@@ -109,6 +110,23 @@ def prepare_data(hist, symbol):
 def home():
     return render_template('index.html')
 
+@app.route('/get_news_impact', methods=['GET'])
+def get_news_impact():
+    try:
+        symbol = request.args.get('symbol', 'TSLA')
+        
+        # Gerçek uygulamada burada haber analizi yapılacak
+        # Şimdilik rastgele bir değer döndürüyoruz
+        # Bu değer -1 ile 1 arasında olacak (-1: çok negatif, 0: nötr, 1: çok pozitif)
+        news_impact = random.uniform(-0.5, 0.5)
+        
+        return jsonify({
+            'success': True,
+            'news_impact': news_impact
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 @app.route('/analyze', methods=['POST'])
 def analyze():
     try:
@@ -141,7 +159,7 @@ def analyze():
         
         # Random Forest modeli
         X_train_rf, X_test_rf, y_train_rf, y_test_rf = train_test_split(X_rf, y_rf, test_size=0.2, random_state=42)
-        rf_model = RandomForestRegressor(n_estimators=400, random_state=42)  # Ağaç sayısını artırdık
+        rf_model = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)  # Ağaç sayısını azalttık
         rf_model.fit(X_train_rf, y_train_rf)
         
         # LSTM modeli
@@ -151,22 +169,22 @@ def analyze():
         # Early stopping ve learning rate scheduler ekle
         early_stopping = tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=20,  # Daha uzun bekleme süresi
+            patience=10,  # Bekleme süresini azalttık
             restore_best_weights=True
         )
         
         reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
             monitor='val_loss',
             factor=0.5,
-            patience=10,  # Daha uzun bekleme süresi
+            patience=5,  # Bekleme süresini azalttık
             min_lr=0.00001
         )
         
-        # Model eğitimi (epoch sayısını 2 katına çıkardık)
+        # CPU için optimize edilmiş eğitim parametreleri
         history = lstm_model.fit(
             X_train_lstm, y_train_lstm,
-            epochs=200,  # 2 katına çıkardık
-            batch_size=64,
+            epochs=50,  # Epoch sayısını azalttık
+            batch_size=256,  # Batch size'ı daha da artırdık
             validation_split=0.2,
             callbacks=[early_stopping, reduce_lr],
             verbose=0
@@ -188,6 +206,10 @@ def analyze():
         while next_date.weekday() >= 5:  # Hafta sonu kontrolü
             next_date += timedelta(days=1)
         
+        # Haber etkisini hesapla (gerçek uygulamada burada haber analizi yapılacak)
+        # Sabit bir değer kullanıyoruz, böylece her analizde aynı değer gösterilecek
+        news_impact = 0.35  # Sabit bir değer
+        
         # Sonuçları hazırla
         result = {
             'success': True,
@@ -196,7 +218,8 @@ def analyze():
             'prediction_date': next_date.strftime('%Y-%m-%d'),
             'dates': processed_data.index.strftime('%Y-%m-%d').tolist(),
             'prices': processed_data['Close'].tolist(),
-            'filtered_prices': processed_data['Filtered_Close'].tolist()
+            'filtered_prices': processed_data['Filtered_Close'].tolist(),
+            'news_impact': news_impact  # Sabit haber etkisi
         }
         
         return jsonify(result)
